@@ -10,7 +10,6 @@
   },
   "dependencies": {
     "@heroicons/react": "^2.2.0",
-    "@openai/chatkit": "^0.1.0",
     "better-auth": "^1.4.17",
     "next": "16.1.4",
     "react": "19.2.3",
