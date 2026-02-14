@@ -1,10 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List, Annotated
+from typing import List, Annotated, Optional
 from uuid import UUID
 
 from src.database import get_session
-from src.schemas.task import TaskResponse, TaskCreate, TaskUpdate
+from src.schemas.task import TaskResponse, TaskCreate, TaskUpdate, TaskListParams
 from src.services import task_service
 from src.auth.dependencies import get_current_user_id
 from src.auth.utils import validate_ownership
@@ -41,12 +41,34 @@ async def verify_ownership(
 async def list_user_tasks(
     user_id: UUID,
     authenticated_user_id: Annotated[UUID, Depends(verify_ownership)],
-    db: AsyncSession = Depends(get_session)
+    db: AsyncSession = Depends(get_session),
+    search: Optional[str] = Query(None, description="Search text across title and description"),
+    status: Optional[str] = Query(None, pattern="^(pending|completed)$", description="Filter by status"),
+    priority: Optional[str] = Query(None, pattern="^(low|medium|high)$", description="Filter by priority"),
+    tag_ids: Optional[List[UUID]] = Query(None, description="Filter by tag IDs"),
+    due_date_from: Optional[str] = Query(None, description="Filter tasks due on or after this date (ISO format)"),
+    due_date_to: Optional[str] = Query(None, description="Filter tasks due on or before this date (ISO format)"),
+    sort_by: str = Query("created_at", pattern="^(created_at|due_date|priority|title)$", description="Field to sort by"),
+    sort_order: str = Query("desc", pattern="^(asc|desc)$", description="Sort order"),
+    limit: int = Query(50, ge=1, le=100, description="Maximum number of results"),
+    offset: int = Query(0, ge=0, description="Number of results to skip")
 ):
     """
-    List all tasks for a specific user.
+    List tasks for a specific user with search, filter, sort, and pagination.
 
     Requires valid JWT token. User can only access their own tasks.
+
+    Query Parameters:
+        - search: Text search across title and description (case-insensitive)
+        - status: Filter by completion status (pending/completed)
+        - priority: Filter by priority level (low/medium/high)
+        - tag_ids: Filter by tag IDs (can specify multiple)
+        - due_date_from: Filter tasks due on or after this date (ISO format)
+        - due_date_to: Filter tasks due on or before this date (ISO format)
+        - sort_by: Field to sort by (created_at/due_date/priority/title)
+        - sort_order: Sort order (asc/desc)
+        - limit: Maximum number of results (1-100, default: 50)
+        - offset: Number of results to skip (default: 0)
 
     Args:
         user_id: User identifier from path
@@ -54,14 +76,34 @@ async def list_user_tasks(
         db: Database session (injected)
 
     Returns:
-        List of tasks belonging to the authenticated user
+        List of tasks matching the criteria
 
     Raises:
-        HTTPException: 401 if not authenticated, 403 if accessing other user's data
+        HTTPException: 401 if not authenticated, 403 if accessing other user's data, 422 if validation fails
     """
     try:
-        tasks = await task_service.get_user_tasks(db, str(authenticated_user_id))
+        # Build TaskListParams from query parameters
+        params = TaskListParams(
+            search=search,
+            status=status,
+            priority=priority,
+            tag_ids=tag_ids,
+            due_date_from=due_date_from,
+            due_date_to=due_date_to,
+            sort_by=sort_by,
+            sort_order=sort_order,
+            limit=limit,
+            offset=offset
+        )
+
+        # Call list_tasks with parameters
+        tasks = await task_service.list_tasks(db, str(authenticated_user_id), params)
         return tasks
+    except ValueError as e:
+        raise HTTPException(
+            status_code=422,
+            detail=str(e)
+        )
     except Exception as e:
         raise HTTPException(
             status_code=500,
@@ -168,6 +210,16 @@ async def update_task(
         HTTPException: 401 if not authenticated, 403 if updating other user's task, 404 if task not found, 422 if validation fails
     """
     try:
+        # Debug logging
+        print(f"\n=== UPDATE TASK ROUTER ===")
+        print(f"Task ID: {task_id}")
+        print(f"Task data received: {task_data}")
+        print(f"Task data dict: {task_data.model_dump()}")
+        print(f"Fields set: {task_data.__pydantic_fields_set__ if hasattr(task_data, '__pydantic_fields_set__') else 'N/A'}")
+        print(f"due_date value: {task_data.due_date}")
+        print(f"remind_at value: {task_data.remind_at}")
+        print(f"=========================\n")
+
         task = await task_service.update_task(db, str(authenticated_user_id), task_id, task_data)
         if not task:
             raise HTTPException(

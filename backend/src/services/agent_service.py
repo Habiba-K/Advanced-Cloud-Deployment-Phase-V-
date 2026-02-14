@@ -15,17 +15,30 @@ SYSTEM_PROMPT = """You are a helpful task management assistant. You help users m
 Your capabilities:
 - Create new tasks when users describe what they need to do
 - List and show tasks with filtering options
-- Update task details (title, description)
+- Update task details (title, description, priority, due_date, remind_at)
 - Mark tasks as complete
 - Delete tasks (always ask for confirmation first)
 - Maintain conversational context across multiple messages
 
 Guidelines:
 - Be friendly and conversational
-- Extract task details from natural language (e.g., "buy groceries by Friday" → title: "Buy groceries")
+- Extract task details from natural language (e.g., "buy groceries by Friday" → title: "Buy groceries", due_date: "2026-02-14")
 - Format task lists in a readable way with numbers (1, 2, 3...)
 - Never expose raw errors - translate them into friendly messages
 - When showing tasks, include their status (pending/completed) and any relevant details
+
+CRITICAL - Updating Existing Tasks:
+When users want to add details to an EXISTING task (e.g., "add a reminder to the Buy watch task", "set due date for groceries task"):
+1. FIRST, call list_tasks to find the task by matching the title
+2. Extract the task_id from the matching task
+3. Call update_task with that task_id and the new details (priority, due_date, remind_at, etc.)
+4. DO NOT create a new task - always update the existing one
+
+Examples of update patterns:
+- "Add a reminder to the X task" → list_tasks → find X → update_task with remind_at
+- "Set due date for X" → list_tasks → find X → update_task with due_date
+- "Change priority of X to high" → list_tasks → find X → update_task with priority
+- "Add description to X task" → list_tasks → find X → update_task with description
 
 CRITICAL - Handling Task References:
 When users refer to tasks by number (e.g., "task 2", "the second one", "number 1"):
@@ -37,11 +50,18 @@ When users refer to tasks by number (e.g., "task 2", "the second one", "number 1
 3. Extract the task_id from the list result and use it for update_task, complete_task, or delete_task
 4. If you DON'T have a recent list, call list_tasks FIRST to get the current tasks, THEN perform the requested action
 
+When users refer to tasks by NAME (e.g., "the Buy watch task", "groceries"):
+1. ALWAYS call list_tasks first to find the task
+2. Match the task by title (case-insensitive, partial match is OK)
+3. Extract the task_id from the matching task
+4. Use that task_id for the requested operation
+
 Example conversation flow:
-User: "Show me all my tasks"
-You: Call list_tasks → Get results with task IDs → Show numbered list to user
-User: "Change task 2 to 'Call mom'"
-You: Look at previous list_tasks result → Find task at position 2 → Extract its task_id → Call update_task with that task_id
+User: "Add a task to buy watch"
+You: Call add_task with title="Buy watch" → Task created
+
+User: "Add a reminder to the Buy watch task for 2/14/2026 at 9:00 AM"
+You: Call list_tasks → Find task with title containing "Buy watch" → Extract task_id → Call update_task with that task_id and remind_at="2026-02-14T09:00:00"
 
 Context handling:
 - Use previous tool call results to resolve references like "that task" or "the first one"
@@ -118,9 +138,9 @@ async def run_agent(
     # Add new user message
     messages.append({"role": "user", "content": user_message})
 
-    # Tool calling loop (max 5 iterations to prevent infinite loops)
+    # Tool calling loop (max 10 iterations to prevent infinite loops)
     tool_calls_metadata = []
-    max_iterations = 5
+    max_iterations = 10
 
     for iteration in range(max_iterations):
         try:
@@ -160,6 +180,9 @@ async def run_agent(
                     tool_name = tool_call.function.name
                     tool_args = json.loads(tool_call.function.arguments)
 
+                    # Log tool call for debugging
+                    logger.info(f"AI calling tool: {tool_name} with args: {tool_args}")
+
                     # Invoke tool through MCP server
                     tool_result = await mcp_server.invoke_tool(
                         tool_name=tool_name,
@@ -167,6 +190,9 @@ async def run_agent(
                         user_id=user_id,
                         db=db
                     )
+
+                    # Log tool result for debugging
+                    logger.info(f"Tool {tool_name} result: {tool_result}")
 
                     # Store metadata for response
                     tool_calls_metadata.append({
@@ -191,7 +217,14 @@ async def run_agent(
 
         except Exception as e:
             logger.error(f"Error in agent execution (iteration {iteration}): {e}")
-            return f"I encountered an error while processing your request. Please try again.", tool_calls_metadata if tool_calls_metadata else None
+            # If we have tool results, return a success message
+            if tool_calls_metadata:
+                return "I've completed your request.", tool_calls_metadata
+            return f"I encountered an error while processing your request. Please try again.", None
 
-    # If we hit max iterations, return what we have
+    # If we hit max iterations but have tool results, return success
+    if tool_calls_metadata:
+        logger.warning(f"Hit max iterations ({max_iterations}) but have tool results")
+        return "I've completed your request.", tool_calls_metadata
+
     return "I've completed the requested actions.", tool_calls_metadata if tool_calls_metadata else None

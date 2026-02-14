@@ -1,0 +1,397 @@
+# Dapr Subscription and Event Contracts
+# Defines the Dapr Pub/Sub subscriptions, event schemas, and cron bindings
+# used across all microservices in the Todo application.
+
+openapi: 3.1.0
+info:
+  title: Dapr Subscriptions & Event Contracts
+  version: 1.0.0
+  description: |
+    Defines the Dapr subscription endpoints, event payload schemas, and
+    cron binding contracts for the event-driven microservices architecture.
+
+    Pub/Sub Component: kafka-pubsub (Redpanda, Kafka-compatible)
+    Topics: task-events, reminders, task-updates
+
+# ============================================================
+# Dapr Pub/Sub Component Configuration
+# ============================================================
+# Component Name: kafka-pubsub
+# Type: pubsub.kafka
+# Broker: Redpanda (localhost:9092 local, Redpanda Cloud for production)
+#
+# Topics:
+#   1. task-events    - All task lifecycle events (create, update, complete, delete)
+#   2. reminders      - Reminder notification triggers
+#   3. task-updates   - Real-time sync events for WebSocket broadcast
+
+paths:
+  # ============================================================
+  # Backend API Service - Publisher
+  # ============================================================
+  # Publishes to: task-events, reminders, task-updates
+  # Does NOT subscribe to any topics
+  #
+  # Publishing via Dapr HTTP API:
+  #   POST http://localhost:3500/v1.0/publish/kafka-pubsub/{topic}
+  #   Content-Type: application/json
+  #   Body: { event payload }
+
+  # ============================================================
+  # Recurring Task Service - Consumer
+  # ============================================================
+  /dapr/subscribe:
+    get:
+      operationId: getDaprSubscriptions
+      summary: Dapr subscription discovery endpoint
+      description: |
+        Each consumer service implements this endpoint. Dapr calls it on startup
+        to discover which topics the service subscribes to. Returns an array of
+        subscription objects.
+      tags: [Dapr Subscriptions]
+      responses:
+        "200":
+          description: List of subscriptions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DaprSubscription"
+              examples:
+                recurring-task-service:
+                  summary: Recurring Task Service subscriptions
+                  value:
+                    - pubsubname: kafka-pubsub
+                      topic: task-events
+                      route: /task-events
+                notification-service:
+                  summary: Notification Service subscriptions
+                  value:
+                    - pubsubname: kafka-pubsub
+                      topic: reminders
+                      route: /reminders
+                audit-service:
+                  summary: Audit Service subscriptions
+                  value:
+                    - pubsubname: kafka-pubsub
+                      topic: task-events
+                      route: /task-events
+                websocket-service:
+                  summary: WebSocket Service subscriptions
+                  value:
+                    - pubsubname: kafka-pubsub
+                      topic: task-updates
+                      route: /task-updates
+
+  # ============================================================
+  # Topic Handler Endpoints
+  # ============================================================
+  /task-events:
+    post:
+      operationId: handleTaskEvent
+      summary: Handle task lifecycle event
+      description: |
+        Receives task events from the task-events topic. Used by:
+        - Recurring Task Service: on 'completed' events, checks recurrence and creates next occurrence
+        - Audit Service: records all events to audit_log table
+
+        Must be idempotent (check event_id before processing).
+      tags: [Event Handlers]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CloudEvent_TaskEvent"
+      responses:
+        "200":
+          description: Event processed successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DaprEventResponse"
+        "404":
+          description: Event dropped (already processed)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DaprEventResponse"
+
+  /reminders:
+    post:
+      operationId: handleReminderEvent
+      summary: Handle reminder notification event
+      description: |
+        Receives reminder events from the reminders topic. Used by:
+        - Notification Service: checks if task is still pending, then publishes
+          notification to task-updates topic for WebSocket delivery.
+
+        Must be idempotent (check event_id before processing).
+      tags: [Event Handlers]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CloudEvent_ReminderEvent"
+      responses:
+        "200":
+          description: Event processed successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DaprEventResponse"
+
+  /task-updates:
+    post:
+      operationId: handleTaskUpdateEvent
+      summary: Handle real-time task update event
+      description: |
+        Receives task update events from the task-updates topic. Used by:
+        - WebSocket Service: broadcasts to all connected WebSocket clients
+          for the user_id in the event payload.
+      tags: [Event Handlers]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CloudEvent_TaskUpdateEvent"
+      responses:
+        "200":
+          description: Event processed and broadcast to clients
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DaprEventResponse"
+
+  # ============================================================
+  # Dapr Cron Binding Endpoint
+  # ============================================================
+  /reminder-cron:
+    post:
+      operationId: handleReminderCron
+      summary: Dapr cron binding handler for reminder checks
+      description: |
+        Invoked by the Dapr cron binding (bindings.cron) every 5 minutes.
+        Queries the database for tasks with remind_at within the next 5 minutes
+        that are still pending, and publishes reminder events to the reminders topic.
+
+        Binding name: reminder-cron
+        Schedule: */5 * * * * (every 5 minutes)
+      tags: [Cron Bindings]
+      requestBody:
+        description: Dapr sends an empty or minimal payload for cron triggers
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: Cron handler executed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  reminders_published:
+                    type: integer
+                    description: Number of reminder events published
+
+components:
+  schemas:
+    DaprSubscription:
+      type: object
+      required: [pubsubname, topic, route]
+      properties:
+        pubsubname:
+          type: string
+          description: Dapr Pub/Sub component name
+          example: kafka-pubsub
+        topic:
+          type: string
+          description: Topic to subscribe to
+          example: task-events
+        route:
+          type: string
+          description: Route to handle events
+          example: /task-events
+
+    DaprEventResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [SUCCESS, RETRY, DROP]
+          description: |
+            SUCCESS: event processed
+            RETRY: temporary failure, Dapr should retry
+            DROP: event should not be retried (e.g., duplicate)
+
+    # ========================================
+    # CloudEvent Wrappers (Dapr format)
+    # ========================================
+    CloudEvent_TaskEvent:
+      type: object
+      description: CloudEvent envelope wrapping a TaskEvent payload
+      properties:
+        id:
+          type: string
+          description: CloudEvent ID
+        source:
+          type: string
+          description: Event source
+          example: backend-api
+        type:
+          type: string
+          example: com.todoapp.task.event
+        specversion:
+          type: string
+          example: "1.0"
+        datacontenttype:
+          type: string
+          example: application/json
+        data:
+          $ref: "#/components/schemas/TaskEvent"
+
+    CloudEvent_ReminderEvent:
+      type: object
+      properties:
+        id:
+          type: string
+        source:
+          type: string
+          example: backend-api
+        type:
+          type: string
+          example: com.todoapp.reminder.event
+        specversion:
+          type: string
+          example: "1.0"
+        datacontenttype:
+          type: string
+          example: application/json
+        data:
+          $ref: "#/components/schemas/ReminderEvent"
+
+    CloudEvent_TaskUpdateEvent:
+      type: object
+      properties:
+        id:
+          type: string
+        source:
+          type: string
+          example: backend-api
+        type:
+          type: string
+          example: com.todoapp.taskupdate.event
+        specversion:
+          type: string
+          example: "1.0"
+        datacontenttype:
+          type: string
+          example: application/json
+        data:
+          $ref: "#/components/schemas/TaskUpdateEvent"
+
+    # ========================================
+    # Event Payload Schemas
+    # ========================================
+    TaskEvent:
+      type: object
+      required: [event_id, event_type, task_id, user_id, task_data, timestamp]
+      properties:
+        event_id:
+          type: string
+          format: uuid
+          description: Unique event identifier for idempotency
+        event_type:
+          type: string
+          enum: [created, updated, completed, deleted]
+        task_id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+        task_data:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            title:
+              type: string
+            description:
+              type: string
+              nullable: true
+            status:
+              type: string
+              enum: [pending, completed]
+            priority:
+              type: string
+              enum: [low, medium, high]
+            due_date:
+              type: string
+              format: date
+              nullable: true
+            recurrence_pattern:
+              type: string
+              enum: [none, daily, weekly, monthly]
+            recurrence_interval:
+              type: integer
+            tags:
+              type: array
+              items:
+                type: string
+              description: Tag names
+        timestamp:
+          type: string
+          format: date-time
+
+    ReminderEvent:
+      type: object
+      required: [event_id, task_id, user_id, title, due_at, remind_at, timestamp]
+      properties:
+        event_id:
+          type: string
+          format: uuid
+        task_id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+        title:
+          type: string
+          description: Task title for display in notification
+        due_at:
+          type: string
+          format: date-time
+        remind_at:
+          type: string
+          format: date-time
+        timestamp:
+          type: string
+          format: date-time
+
+    TaskUpdateEvent:
+      type: object
+      required: [event_id, event_type, task_id, user_id, task_data, timestamp]
+      properties:
+        event_id:
+          type: string
+          format: uuid
+        event_type:
+          type: string
+          enum: [created, updated, completed, deleted]
+        task_id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+        task_data:
+          type: object
+          description: Full task snapshot for client-side state update
+        timestamp:
+          type: string
+          format: date-time

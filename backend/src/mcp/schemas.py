@@ -25,13 +25,24 @@ class AddTaskInput(BaseModel):
     user_id: str = Field(..., description="User identifier")
     title: str = Field(..., min_length=1, max_length=500, description="Task title")
     description: Optional[str] = Field(None, max_length=5000, description="Task description")
+    priority: Optional[str] = Field("medium", description="Task priority: 'low', 'medium', or 'high'")
+    due_date: Optional[str] = Field(None, description="Due date in ISO format (YYYY-MM-DD)")
+    remind_at: Optional[str] = Field(None, description="Reminder datetime in ISO format")
+
+    @validator('priority')
+    def validate_priority(cls, v):
+        if v and v not in ['low', 'medium', 'high']:
+            raise ValueError("priority must be 'low', 'medium', or 'high'")
+        return v
 
     class Config:
         json_schema_extra = {
             "example": {
                 "user_id": "user123",
                 "title": "Buy groceries",
-                "description": "Milk, eggs, bread"
+                "description": "Milk, eggs, bread",
+                "priority": "medium",
+                "due_date": "2026-02-15"
             }
         }
 
@@ -76,13 +87,23 @@ class UpdateTaskInput(BaseModel):
     task_id: str = Field(..., description="Task UUID")
     title: Optional[str] = Field(None, max_length=500, description="New task title")
     description: Optional[str] = Field(None, max_length=5000, description="New task description")
+    priority: Optional[str] = Field(None, description="Task priority: 'low', 'medium', or 'high'")
+    due_date: Optional[str] = Field(None, description="Due date in ISO format (YYYY-MM-DD)")
+    remind_at: Optional[str] = Field(None, description="Reminder datetime in ISO format")
+
+    @validator('priority')
+    def validate_priority(cls, v):
+        if v and v not in ['low', 'medium', 'high']:
+            raise ValueError("priority must be 'low', 'medium', or 'high'")
+        return v
 
     class Config:
         json_schema_extra = {
             "example": {
                 "user_id": "user123",
                 "task_id": "550e8400-e29b-41d4-a716-446655440000",
-                "title": "Buy groceries and fruits"
+                "title": "Buy groceries and fruits",
+                "due_date": "2026-02-15"
             }
         }
 
@@ -217,6 +238,22 @@ def get_tool_parameter_schemas():
                     "type": "string",
                     "description": "Task description (optional, max 5000 characters)",
                     "maxLength": 5000
+                },
+                "priority": {
+                    "type": "string",
+                    "enum": ["low", "medium", "high"],
+                    "description": "Task priority level (default: medium)",
+                    "default": "medium"
+                },
+                "due_date": {
+                    "type": "string",
+                    "description": "Due date in ISO format YYYY-MM-DD (optional)",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                },
+                "remind_at": {
+                    "type": "string",
+                    "description": "Reminder datetime in ISO format (optional)",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2})?$"
                 }
             },
             "required": ["title"]
@@ -259,6 +296,21 @@ def get_tool_parameter_schemas():
                     "type": "string",
                     "description": "New task description (optional)",
                     "maxLength": 5000
+                },
+                "priority": {
+                    "type": "string",
+                    "enum": ["low", "medium", "high"],
+                    "description": "New task priority level (optional)"
+                },
+                "due_date": {
+                    "type": "string",
+                    "description": "New due date in ISO format YYYY-MM-DD (optional)",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                },
+                "remind_at": {
+                    "type": "string",
+                    "description": "New reminder datetime in ISO format (optional)",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2})?$"
                 }
             },
             "required": ["task_id"]

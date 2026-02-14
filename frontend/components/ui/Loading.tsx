@@ -13,7 +13,7 @@ export function Loading({ message = 'Loading...', size = 'md' }: LoadingProps) {
   }
 
   return (
-    <div className="flex flex-col items-center justify-center p-8">
+    <div className="flex flex-col items-center justify-center p-4">
       <svg
         className={`animate-spin text-primary-600 dark:text-primary-400 ${sizeStyles[size]}`}
         xmlns="http://www.w3.org/2000/svg"
@@ -35,7 +35,7 @@ export function Loading({ message = 'Loading...', size = 'md' }: LoadingProps) {
         ></path>
       </svg>
       {message && (
-        <p className="mt-4 text-sm text-gray-600 dark:text-gray-400">{message}</p>
+        <p className="mt-3 text-sm text-gray-600 dark:text-gray-400">{message}</p>
       )}
     </div>
   )

@@ -1,0 +1,261 @@
+openapi: 3.1.0
+info:
+  title: Tags API
+  version: 1.0.0
+  description: |
+    User-scoped tag management for task categorization.
+    All endpoints require JWT authentication via Bearer token.
+    Tags are unique per user (enforced at DB level).
+
+servers:
+  - url: http://localhost:8000
+    description: Local development
+  - url: http://backend.todo-app.svc.cluster.local:8000
+    description: Minikube (in-cluster)
+
+security:
+  - BearerAuth: []
+
+paths:
+  /{user_id}/tags:
+    get:
+      operationId: listTags
+      summary: List all tags for the authenticated user
+      tags: [Tags]
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of user tags
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TagResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+    post:
+      operationId: createTag
+      summary: Create a new tag
+      description: |
+        Creates a tag scoped to the authenticated user. Tag names must be
+        unique per user. Returns 409 if a tag with the same name exists.
+      tags: [Tags]
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TagCreate"
+      responses:
+        "201":
+          description: Tag created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TagResponse"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: Tag with this name already exists for user
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
+                    example: "Tag 'Work' already exists"
+
+  /{user_id}/tags/{tag_id}:
+    put:
+      operationId: updateTag
+      summary: Update a tag (rename or change color)
+      tags: [Tags]
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: tag_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TagUpdate"
+      responses:
+        "200":
+          description: Tag updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TagResponse"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Another tag with this name already exists for user
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
+                    example: "Tag 'Work' already exists"
+
+    delete:
+      operationId: deleteTag
+      summary: Delete a tag
+      description: |
+        Deletes the tag and removes all task-tag associations (CASCADE).
+        Tasks themselves are not affected.
+      tags: [Tags]
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: tag_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Tag deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Tag deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    TagCreate:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: Tag name (trimmed, non-empty, unique per user)
+        color:
+          type: string
+          pattern: "^#[0-9a-fA-F]{6}$"
+          default: "#6B7280"
+          description: Hex color code (e.g., #FF5733)
+
+    TagUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        color:
+          type: string
+          pattern: "^#[0-9a-fA-F]{6}$"
+
+    TagResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+        name:
+          type: string
+        color:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        task_count:
+          type: integer
+          description: Number of tasks using this tag
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid JWT token
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              detail:
+                type: string
+                example: Not authenticated
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              detail:
+                type: string
+                example: Tag not found
+
+    ValidationError:
+      description: Request validation failed
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              detail:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    loc:
+                      type: array
+                      items:
+                        type: string
+                    msg:
+                      type: string
+                    type:
+                      type: string

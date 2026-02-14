@@ -111,9 +111,11 @@ async def root():
 
 
 # Include routers
-from src.routers import auth
+from src.routers import auth, tags, dapr
 app.include_router(auth.router, prefix="/api")
 app.include_router(tasks.router, prefix="/api", tags=["tasks"])
+app.include_router(tags.router, prefix="/api", tags=["tags"])
+app.include_router(dapr.router, tags=["dapr"])
 
 from src.routers import chat
 app.include_router(chat.router, prefix="/api", tags=["chat"])

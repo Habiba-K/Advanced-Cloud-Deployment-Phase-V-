@@ -69,7 +69,7 @@ async def add_task_tool(arguments: Dict[str, Any], user_id: str, db: AsyncSessio
     Create a new task for the user.
 
     Args:
-        arguments: Tool arguments (title, description)
+        arguments: Tool arguments (title, description, priority, due_date, remind_at)
         user_id: Authenticated user ID
         db: Database session
 
@@ -83,7 +83,10 @@ async def add_task_tool(arguments: Dict[str, Any], user_id: str, db: AsyncSessio
         # Create task via service
         task_data = TaskCreate(
             title=input_data.title,
-            description=input_data.description
+            description=input_data.description,
+            priority=input_data.priority or "medium",
+            due_date=input_data.due_date,
+            remind_at=input_data.remind_at
         )
         task = await task_service.create_task(db, user_id, task_data)
 
@@ -127,6 +130,10 @@ async def list_tasks_tool(arguments: Dict[str, Any], user_id: str, db: AsyncSess
         List of tasks with count
     """
     try:
+        # Handle None or empty arguments
+        if arguments is None:
+            arguments = {}
+
         # Validate input
         input_data = ListTasksInput(**arguments, user_id=user_id)
 
@@ -227,10 +234,10 @@ async def get_task_tool(arguments: Dict[str, Any], user_id: str, db: AsyncSessio
 
 async def update_task_tool(arguments: Dict[str, Any], user_id: str, db: AsyncSession) -> Dict[str, Any]:
     """
-    Update a task's title or description.
+    Update a task's title, description, priority, due_date, or remind_at.
 
     Args:
-        arguments: Tool arguments (task_id, title, description)
+        arguments: Tool arguments (task_id, title, description, priority, due_date, remind_at)
         user_id: Authenticated user ID
         db: Database session
 
@@ -244,7 +251,10 @@ async def update_task_tool(arguments: Dict[str, Any], user_id: str, db: AsyncSes
         # Update task via service
         task_data = TaskUpdate(
             title=input_data.title,
-            description=input_data.description
+            description=input_data.description,
+            priority=input_data.priority,
+            due_date=input_data.due_date,
+            remind_at=input_data.remind_at
         )
         task = await task_service.update_task(db, user_id, UUID(input_data.task_id), task_data)
 
@@ -458,7 +468,7 @@ def register_tools(mcp_server) -> Dict[str, Any]:
     # Register add_task
     mcp_server.register_tool(
         name="add_task",
-        description="Create a new task for the user",
+        description="Create a new task with title, description, priority (low/medium/high), due_date (YYYY-MM-DD), and remind_at (ISO datetime). Use this to create brand new tasks.",
         parameters=tool_schemas["add_task"],
         handler=add_task_tool
     )
@@ -466,7 +476,7 @@ def register_tools(mcp_server) -> Dict[str, Any]:
     # Register list_tasks
     mcp_server.register_tool(
         name="list_tasks",
-        description="List user's tasks with optional status filtering",
+        description="List user's tasks with optional status filtering (all/pending/completed). Use this to find existing tasks before updating them.",
         parameters=tool_schemas["list_tasks"],
         handler=list_tasks_tool
     )
@@ -474,7 +484,7 @@ def register_tools(mcp_server) -> Dict[str, Any]:
     # Register get_task
     mcp_server.register_tool(
         name="get_task",
-        description="Get a specific task by ID",
+        description="Get a specific task by ID to view its current details",
         parameters=tool_schemas["get_task"],
         handler=get_task_tool
     )
@@ -482,7 +492,7 @@ def register_tools(mcp_server) -> Dict[str, Any]:
     # Register update_task
     mcp_server.register_tool(
         name="update_task",
-        description="Update a task's title or description",
+        description="Update an existing task's title, description, priority (low/medium/high), due_date (YYYY-MM-DD), or remind_at (ISO datetime). IMPORTANT: Use list_tasks first to find the task_id, then use this tool to update it. Do NOT create a new task if one already exists.",
         parameters=tool_schemas["update_task"],
         handler=update_task_tool
     )

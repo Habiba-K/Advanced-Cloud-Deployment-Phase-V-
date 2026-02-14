@@ -1,0 +1,518 @@
+openapi: 3.1.0
+info:
+  title: Tasks API - Advanced Features
+  version: 2.0.0
+  description: |
+    Extended task management API with priority, tags, due dates, reminders,
+    recurrence, search, filter, and sort capabilities.
+    All endpoints require JWT authentication via Bearer token.
+
+servers:
+  - url: http://localhost:8000
+    description: Local development
+  - url: http://backend.todo-app.svc.cluster.local:8000
+    description: Minikube (in-cluster)
+
+security:
+  - BearerAuth: []
+
+paths:
+  /{user_id}/tasks:
+    get:
+      operationId: listTasks
+      summary: List tasks with search, filter, sort, and pagination
+      description: |
+        Returns paginated tasks for the authenticated user. Supports text search
+        across title and description, filtering by status/priority/tags/due date,
+        and sorting by various fields. Soft-deleted tasks are excluded.
+      tags: [Tasks]
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: search
+          in: query
+          description: Text search across title and description (ILIKE)
+          schema:
+            type: string
+            maxLength: 200
+        - name: status
+          in: query
+          description: Filter by task status
+          schema:
+            type: string
+            enum: [pending, completed]
+        - name: priority
+          in: query
+          description: Filter by priority level
+          schema:
+            type: string
+            enum: [low, medium, high]
+        - name: tag_ids
+          in: query
+          description: Filter by tag IDs (comma-separated UUIDs)
+          schema:
+            type: array
+            items:
+              type: string
+              format: uuid
+          style: form
+          explode: false
+        - name: due_date_from
+          in: query
+          description: Filter tasks with due date on or after this date
+          schema:
+            type: string
+            format: date
+        - name: due_date_to
+          in: query
+          description: Filter tasks with due date on or before this date
+          schema:
+            type: string
+            format: date
+        - name: sort_by
+          in: query
+          description: Field to sort by
+          schema:
+            type: string
+            enum: [created_at, due_date, priority, title]
+            default: created_at
+        - name: sort_order
+          in: query
+          description: Sort direction
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: desc
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: Paginated task list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+    post:
+      operationId: createTask
+      summary: Create a new task
+      description: |
+        Creates a task with optional priority, tags, due date, reminder, and
+        recurrence. Publishes a TaskEvent (type: created) to the task-events topic.
+      tags: [Tasks]
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TaskCreate"
+      responses:
+        "201":
+          description: Task created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskResponse"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /{user_id}/tasks/{task_id}:
+    get:
+      operationId: getTask
+      summary: Get a single task by ID
+      tags: [Tasks]
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: task_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Task details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    put:
+      operationId: updateTask
+      summary: Update an existing task
+      description: |
+        Updates task fields. Publishes a TaskEvent (type: updated) to the
+        task-events topic. If due_date or remind_at changes, also updates
+        the reminder schedule.
+      tags: [Tasks]
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: task_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TaskUpdate"
+      responses:
+        "200":
+          description: Task updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskResponse"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    delete:
+      operationId: deleteTask
+      summary: Soft-delete a task
+      description: |
+        Sets deleted_at timestamp (soft delete). Publishes a TaskEvent
+        (type: deleted) to the task-events topic. Stops recurring task generation.
+      tags: [Tasks]
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: task_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Task deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Task deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /{user_id}/tasks/{task_id}/complete:
+    patch:
+      operationId: completeTask
+      summary: Mark task as complete
+      description: |
+        Sets status to 'completed' and completed_at to current time.
+        Publishes a TaskEvent (type: completed) to the task-events topic.
+        If task has a recurrence pattern, triggers new occurrence creation
+        via the Recurring Task Service consumer.
+      tags: [Tasks]
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: task_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Task completed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /{user_id}/tasks/{task_id}/incomplete:
+    patch:
+      operationId: incompleteTask
+      summary: Mark task as incomplete
+      description: |
+        Sets status back to 'pending' and clears completed_at.
+        Publishes a TaskEvent (type: updated) to the task-events topic.
+      tags: [Tasks]
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: task_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Task marked incomplete
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    TaskCreate:
+      type: object
+      required: [title]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: Task title (trimmed, non-empty)
+        description:
+          type: string
+          nullable: true
+        priority:
+          type: string
+          enum: [low, medium, high]
+          default: medium
+        tag_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: List of tag IDs to associate
+          default: []
+        due_date:
+          type: string
+          format: date
+          nullable: true
+        remind_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Must be before due_date if both set
+        recurrence_pattern:
+          type: string
+          enum: [none, daily, weekly, monthly]
+          default: none
+        recurrence_interval:
+          type: integer
+          minimum: 1
+          default: 1
+          description: "e.g., every 2 weeks (pattern=weekly, interval=2)"
+
+    TaskUpdate:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 500
+        description:
+          type: string
+          nullable: true
+        priority:
+          type: string
+          enum: [low, medium, high]
+        tag_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        due_date:
+          type: string
+          format: date
+          nullable: true
+        remind_at:
+          type: string
+          format: date-time
+          nullable: true
+        recurrence_pattern:
+          type: string
+          enum: [none, daily, weekly, monthly]
+        recurrence_interval:
+          type: integer
+          minimum: 1
+
+    TaskResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        completed:
+          type: boolean
+          description: Legacy field, kept for backward compatibility
+        status:
+          type: string
+          enum: [pending, completed]
+        priority:
+          type: string
+          enum: [low, medium, high]
+        due_date:
+          type: string
+          format: date
+          nullable: true
+        remind_at:
+          type: string
+          format: date-time
+          nullable: true
+        recurrence_pattern:
+          type: string
+          enum: [none, daily, weekly, monthly]
+        recurrence_interval:
+          type: integer
+        next_occurrence:
+          type: string
+          format: date
+          nullable: true
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        tags:
+          type: array
+          items:
+            $ref: "#/components/schemas/TagSummary"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    TagSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        color:
+          type: string
+
+    TaskListResponse:
+      type: object
+      properties:
+        tasks:
+          type: array
+          items:
+            $ref: "#/components/schemas/TaskResponse"
+        total:
+          type: integer
+          description: Total number of matching tasks (for pagination)
+        limit:
+          type: integer
+        offset:
+          type: integer
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid JWT token
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              detail:
+                type: string
+                example: Not authenticated
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              detail:
+                type: string
+                example: Task not found
+
+    ValidationError:
+      description: Request validation failed
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              detail:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    loc:
+                      type: array
+                      items:
+                        type: string
+                    msg:
+                      type: string
+                    type:
+                      type: string

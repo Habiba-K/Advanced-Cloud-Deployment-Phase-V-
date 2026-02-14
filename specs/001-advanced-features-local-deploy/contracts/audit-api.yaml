@@ -1,0 +1,168 @@
+openapi: 3.1.0
+info:
+  title: Audit Log API
+  version: 1.0.0
+  description: |
+    Read-only audit log API for viewing task operation history.
+    Audit entries are written by the Audit Service consumer (from task-events topic).
+    All endpoints require JWT authentication via Bearer token.
+
+servers:
+  - url: http://localhost:8000
+    description: Local development
+  - url: http://backend.todo-app.svc.cluster.local:8000
+    description: Minikube (in-cluster)
+
+security:
+  - BearerAuth: []
+
+paths:
+  /{user_id}/audit:
+    get:
+      operationId: listAuditEntries
+      summary: List audit log entries for the authenticated user
+      description: |
+        Returns paginated audit log entries ordered by most recent first.
+        Each entry represents a task operation (create, update, complete, delete)
+        with a full task snapshot at the time of the event.
+      tags: [Audit]
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: event_type
+          in: query
+          description: Filter by event type
+          schema:
+            type: string
+            enum: [created, updated, completed, deleted]
+        - name: task_id
+          in: query
+          description: Filter by specific task ID
+          schema:
+            type: string
+            format: uuid
+        - name: from_date
+          in: query
+          description: Filter entries from this datetime (inclusive)
+          schema:
+            type: string
+            format: date-time
+        - name: to_date
+          in: query
+          description: Filter entries up to this datetime (inclusive)
+          schema:
+            type: string
+            format: date-time
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: Paginated audit log
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    AuditEntryResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+        event_type:
+          type: string
+          enum: [created, updated, completed, deleted]
+        task_id:
+          type: string
+          format: uuid
+        task_data:
+          type: object
+          description: Full task snapshot at event time
+          properties:
+            id:
+              type: string
+              format: uuid
+            title:
+              type: string
+            description:
+              type: string
+              nullable: true
+            status:
+              type: string
+              enum: [pending, completed]
+            priority:
+              type: string
+              enum: [low, medium, high]
+            due_date:
+              type: string
+              format: date
+              nullable: true
+            recurrence_pattern:
+              type: string
+              enum: [none, daily, weekly, monthly]
+            recurrence_interval:
+              type: integer
+            tags:
+              type: array
+              items:
+                type: string
+              description: Tag names at time of event
+        event_id:
+          type: string
+          description: Kafka message ID (for deduplication)
+        timestamp:
+          type: string
+          format: date-time
+
+    AuditListResponse:
+      type: object
+      properties:
+        entries:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditEntryResponse"
+        total:
+          type: integer
+          description: Total number of matching entries
+        limit:
+          type: integer
+        offset:
+          type: integer
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid JWT token
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              detail:
+                type: string
+                example: Not authenticated
