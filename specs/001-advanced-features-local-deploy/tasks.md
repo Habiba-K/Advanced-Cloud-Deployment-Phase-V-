@@ -172,15 +172,15 @@ description: "Implementation tasks for Advanced Features & Local Deployment"
 
 ### Notification Service (Consumer)
 
-- [ ] T045 [P] [US3] Create notification service main.py in services/notification/main.py with FastAPI app
-- [ ] T046 [P] [US3] Implement GET /dapr/subscribe in services/notification/main.py returning subscription to "reminders" topic
-- [ ] T047 [US3] Implement POST /reminders handler in services/notification/main.py to verify task status and publish TaskUpdateEvent with notification payload
-- [ ] T048 [P] [US3] Create Dockerfile for notification service in services/notification/Dockerfile
-- [ ] T049 [P] [US3] Create requirements.txt for notification service in services/notification/requirements.txt
+- [x] T045 [P] [US3] Create notification service main.py in services/notification/main.py with FastAPI app
+- [x] T046 [P] [US3] Implement GET /dapr/subscribe in services/notification/main.py returning subscription to "reminders" topic
+- [x] T047 [US3] Implement POST /reminders handler in services/notification/main.py to verify task status and publish TaskUpdateEvent with notification payload
+- [x] T048 [P] [US3] Create Dockerfile for notification service in services/notification/Dockerfile
+- [x] T049 [P] [US3] Create requirements.txt for notification service in services/notification/requirements.txt
 
 ### Frontend - Components
 
-- [ ] T050 [P] [US3] Create NotificationToast component in frontend/components/NotificationToast.tsx for in-app notification display (deferred - requires notification service)
+- [x] T050 [P] [US3] Create NotificationToast component in frontend/components/NotificationToast.tsx for in-app notification display (deferred - requires notification service)
 
 ### Frontend - Pages
 
@@ -198,36 +198,36 @@ description: "Implementation tasks for Advanced Features & Local Deployment"
 
 ### Backend - Models
 
-- [ ] T052 [P] [US4] Extend Task model in backend/src/models/task.py to add recurrence_pattern enum (none, daily, weekly, monthly), recurrence_interval (int), next_occurrence (date) fields
+- [x] T052 [P] [US4] Extend Task model in backend/src/models/task.py to add recurrence_pattern enum (none, daily, weekly, monthly), recurrence_interval (int), next_occurrence (date) fields
 
 ### Backend - Schemas
 
-- [ ] T053 [P] [US4] Extend Task schemas in backend/src/schemas/task.py to add recurrence_pattern and recurrence_interval fields
+- [x] T053 [P] [US4] Extend Task schemas in backend/src/schemas/task.py to add recurrence_pattern and recurrence_interval fields
 
 ### Backend - Services
 
-- [ ] T054 [US4] Extend task service in backend/src/services/task_service.py to publish TaskEvent (type: completed) when task is marked complete
+- [x] T054 [US4] Extend task service in backend/src/services/task_service.py to publish TaskEvent (type: completed) when task is marked complete
 
 ### Backend - Routers
 
-- [ ] T055 [US4] Add PATCH /tasks/{id}/complete endpoint in backend/src/routers/tasks.py to mark task complete and publish TaskEvent
-- [ ] T056 [US4] Add PATCH /tasks/{id}/incomplete endpoint in backend/src/routers/tasks.py to mark task incomplete
+- [x] T055 [US4] Add PATCH /tasks/{id}/complete endpoint in backend/src/routers/tasks.py to mark task complete and publish TaskEvent
+- [x] T056 [US4] Add PATCH /tasks/{id}/incomplete endpoint in backend/src/routers/tasks.py to mark task incomplete
 
 ### Recurring Task Service (Consumer)
 
-- [ ] T057 [P] [US4] Create recurring task service main.py in services/recurring-task/main.py with FastAPI app
-- [ ] T058 [P] [US4] Implement GET /dapr/subscribe in services/recurring-task/main.py returning subscription to "task-events" topic
-- [ ] T059 [US4] Implement POST /task-events handler in services/recurring-task/main.py to check idempotency, calculate next_occurrence, create new task, and publish TaskEvent
-- [ ] T060 [P] [US4] Create Dockerfile for recurring task service in services/recurring-task/Dockerfile
-- [ ] T061 [P] [US4] Create requirements.txt for recurring task service in services/recurring-task/requirements.txt
+- [x] T057 [P] [US4] Create recurring task service main.py in services/recurring-task/main.py with FastAPI app
+- [x] T058 [P] [US4] Implement GET /dapr/subscribe in services/recurring-task/main.py returning subscription to "task-events" topic
+- [x] T059 [US4] Implement POST /task-events handler in services/recurring-task/main.py to check idempotency, calculate next_occurrence, create new task, and publish TaskEvent
+- [x] T060 [P] [US4] Create Dockerfile for recurring task service in services/recurring-task/Dockerfile
+- [x] T061 [P] [US4] Create requirements.txt for recurring task service in services/recurring-task/requirements.txt
 
 ### Frontend - Components
 
-- [ ] T062 [P] [US4] Create RecurrenceSelector component in frontend/components/RecurrenceSelector.tsx with pattern dropdown and interval input
+- [x] T062 [P] [US4] Create RecurrenceSelector component in frontend/components/RecurrenceSelector.tsx with pattern dropdown and interval input
 
 ### Frontend - Pages
 
-- [ ] T063 [US4] Update task create/edit pages to add RecurrenceSelector with validation (recurrence_interval >= 1)
+- [x] T063 [US4] Update task create/edit pages to add RecurrenceSelector with validation (recurrence_interval >= 1)
 
 **Checkpoint**: At this point, User Stories 1-4 should all work independently - users can create recurring tasks that auto-regenerate
 
@@ -241,36 +241,36 @@ description: "Implementation tasks for Advanced Features & Local Deployment"
 
 ### Backend - Models
 
-- [ ] T064 [P] [US5] Create AuditLog model in backend/src/models/audit_log.py with id, user_id, event_type, task_id, task_data (JSONB), event_id (unique), timestamp fields
+- [x] T064 [P] [US5] Create AuditLog model in backend/src/models/audit_log.py with id, user_id, event_type, task_id, task_data (JSONB), event_id (unique), timestamp fields
 
 ### Backend - Schemas
 
-- [ ] T065 [P] [US5] Create Audit schemas in backend/src/schemas/audit.py (AuditLogResponse, AuditLogListParams with filters)
+- [x] T065 [P] [US5] Create Audit schemas in backend/src/schemas/audit.py (AuditLogResponse, AuditLogListParams with filters)
 
 ### Audit Service (Consumer)
 
-- [ ] T066 [P] [US5] Create audit service main.py in services/audit/main.py with FastAPI app
-- [ ] T067 [P] [US5] Implement GET /dapr/subscribe in services/audit/main.py returning subscription to "task-events" topic
-- [ ] T068 [US5] Implement POST /task-events handler in services/audit/main.py to check idempotency and insert into audit_log table
-- [ ] T069 [P] [US5] Create Dockerfile for audit service in services/audit/Dockerfile
-- [ ] T070 [P] [US5] Create requirements.txt for audit service in services/audit/requirements.txt
+- [x] T066 [P] [US5] Create audit service main.py in services/audit/main.py with FastAPI app
+- [x] T067 [P] [US5] Implement GET /dapr/subscribe in services/audit/main.py returning subscription to "task-events" topic
+- [x] T068 [US5] Implement POST /task-events handler in services/audit/main.py to check idempotency and insert into audit_log table
+- [x] T069 [P] [US5] Create Dockerfile for audit service in services/audit/Dockerfile
+- [x] T070 [P] [US5] Create requirements.txt for audit service in services/audit/requirements.txt
 
 ### Backend - Routers
 
-- [ ] T071 [US5] Create audit router in backend/src/routers/audit.py with GET /{user_id}/audit endpoint for paginated audit log retrieval
-- [ ] T072 [US5] Update backend/src/main.py to register audit router
+- [x] T071 [US5] Create audit router in backend/src/routers/audit.py with GET /{user_id}/audit endpoint for paginated audit log retrieval
+- [x] T072 [US5] Update backend/src/main.py to register audit router
 
 ### Frontend - Components
 
-- [ ] T073 [P] [US5] Create AuditEntry component in frontend/components/AuditEntry.tsx to display event_type badge, task snapshot, and timestamp
+- [x] T073 [P] [US5] Create AuditEntry component in frontend/components/AuditEntry.tsx to display event_type badge, task snapshot, and timestamp
 
 ### Frontend - Pages
 
-- [ ] T074 [US5] Create audit log page in frontend/app/audit/page.tsx with paginated list, event_type filter, and date range filter
+- [x] T074 [US5] Create audit log page in frontend/app/audit/page.tsx with paginated list, event_type filter, and date range filter
 
 ### Frontend - API Client
 
-- [ ] T075 [US5] Extend API client in frontend/lib/api.ts to add listAudit method with filter and pagination parameters
+- [x] T075 [US5] Extend API client in frontend/lib/api.ts to add listAudit method with filter and pagination parameters
 
 **Checkpoint**: At this point, User Stories 1-5 should all work independently - users can review their complete activity history
 
@@ -284,30 +284,32 @@ description: "Implementation tasks for Advanced Features & Local Deployment"
 
 ### Backend - Services
 
-- [ ] T076 [US6] Extend task service in backend/src/services/task_service.py to publish TaskUpdateEvent after every task operation (create, update, complete, delete)
+- [x] T076 [US6] Extend task service in backend/src/services/task_service.py to publish TaskUpdateEvent after every task operation (create, update, complete, delete)
 
 ### WebSocket Service (Consumer)
 
-- [ ] T077 [P] [US6] Create websocket service main.py in services/websocket/main.py with FastAPI app and WebSocket endpoint GET /ws/{user_id}
-- [ ] T078 [P] [US6] Implement connection manager in services/websocket/main.py to track active WebSocket connections per user_id
-- [ ] T079 [P] [US6] Implement GET /dapr/subscribe in services/websocket/main.py returning subscription to "task-updates" topic
-- [ ] T080 [US6] Implement POST /task-updates handler in services/websocket/main.py to broadcast events to all user connections
-- [ ] T081 [P] [US6] Create Dockerfile for websocket service in services/websocket/Dockerfile
-- [ ] T082 [P] [US6] Create requirements.txt for websocket service in services/websocket/requirements.txt
+- [x] T077 [P] [US6] Create websocket service main.py in services/websocket/main.py with FastAPI app and WebSocket endpoint GET /ws/{user_id}
+- [x] T078 [P] [US6] Implement connection manager in services/websocket/main.py to track active WebSocket connections per user_id
+- [x] T079 [P] [US6] Implement GET /dapr/subscribe in services/websocket/main.py returning subscription to "task-updates" topic
+- [x] T080 [US6] Implement POST /task-updates handler in services/websocket/main.py to broadcast events to all user connections
+- [x] T081 [P] [US6] Create Dockerfile for websocket service in services/websocket/Dockerfile
+- [x] T082 [P] [US6] Create requirements.txt for websocket service in services/websocket/requirements.txt
 
 ### Frontend - WebSocket Client
 
-- [ ] T083 [P] [US6] Create WebSocket client in frontend/lib/websocket.ts with connectWebSocket, onMessage, disconnect, and auto-reconnect logic
+- [x] T083 [P] [US6] Create WebSocket client in frontend/lib/websocket.ts with connectWebSocket, onMessage, disconnect, and auto-reconnect logic
 
 ### Frontend - Pages
 
-- [ ] T084 [US6] Update dashboard page in frontend/app/dashboard/page.tsx to connect to WebSocket and update task list on incoming messages
+- [x] T084 [US6] Update dashboard page in frontend/app/dashboard/page.tsx to connect to WebSocket and update task list on incoming messages
 
 **Checkpoint**: At this point, all user stories (1-6) should work independently - users have a fully-featured, real-time task management system
 
 ---
 
-## Phase 9: Deployment - Deploy and Run Locally on Minikube (Priority: P1)
+## Phase 9: Deployment - Deploy and Run Locally on Minikube (Priority: P1) -- SKIPPED
+
+**Status**: SKIPPED by user decision - proceeding directly to cloud deployment.
 
 **Goal**: Deploy the entire application stack to local Minikube cluster with Dapr sidecars, Redpanda, and Helm charts
 

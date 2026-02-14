@@ -4,8 +4,9 @@ import { useState, useEffect } from 'react'
 import { useForm } from 'react-hook-form'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
-import { CreateTaskRequest, UpdateTaskRequest, Task, TaskPriority } from '@/types'
+import { CreateTaskRequest, UpdateTaskRequest, Task, TaskPriority, RecurrencePattern } from '@/types'
 import TagSelector from './TagSelector'
+import RecurrenceSelector from './RecurrenceSelector'
 
 interface TaskFormProps {
   task?: Task // Optional for edit mode
@@ -22,6 +23,8 @@ export function TaskForm({ task, onSubmit, onSuccess, onCancel, loading: externa
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>(task?.tags?.map(t => t.id) || [])
   const [dueDate, setDueDate] = useState<string>(task?.due_date || '')
   const [remindAt, setRemindAt] = useState<string>(task?.remind_at ? task.remind_at.slice(0, 16) : '')
+  const [recurrencePattern, setRecurrencePattern] = useState<RecurrencePattern>(task?.recurrence_pattern || 'none')
+  const [recurrenceInterval, setRecurrenceInterval] = useState<number>(task?.recurrence_interval || 1)
   const [dateValidationError, setDateValidationError] = useState<string>('')
 
   const loading = externalLoading || internalLoading
@@ -59,6 +62,8 @@ export function TaskForm({ task, onSubmit, onSuccess, onCancel, loading: externa
       })
       setSelectedPriority(task.priority)
       setSelectedTagIds(task.tags?.map(t => t.id) || [])
+      setRecurrencePattern(task.recurrence_pattern || 'none')
+      setRecurrenceInterval(task.recurrence_interval || 1)
 
       // Format dates for HTML inputs
       const formattedDueDate = task.due_date || ''
@@ -103,7 +108,9 @@ export function TaskForm({ task, onSubmit, onSuccess, onCancel, loading: externa
         priority: selectedPriority,
         tag_ids: selectedTagIds,
         due_date: dueDate ? dueDate : (isEditMode ? null : undefined),
-        remind_at: remindAt ? remindAt : (isEditMode ? null : undefined)
+        remind_at: remindAt ? remindAt : (isEditMode ? null : undefined),
+        recurrence_pattern: recurrencePattern,
+        recurrence_interval: recurrenceInterval,
       }
 
       await onSubmit(submitData)
@@ -113,6 +120,8 @@ export function TaskForm({ task, onSubmit, onSuccess, onCancel, loading: externa
         setSelectedTagIds([])
         setDueDate('')
         setRemindAt('')
+        setRecurrencePattern('none')
+        setRecurrenceInterval(1)
       }
       if (onSuccess) {
         onSuccess()
@@ -251,6 +260,15 @@ export function TaskForm({ task, onSubmit, onSuccess, onCancel, loading: externa
           />
         </div>
       </div>
+
+      {/* Recurrence Selector */}
+      <RecurrenceSelector
+        pattern={recurrencePattern}
+        interval={recurrenceInterval}
+        onPatternChange={setRecurrencePattern}
+        onIntervalChange={setRecurrenceInterval}
+        disabled={loading}
+      />
 
       {/* Date Validation Error */}
       {dateValidationError && (

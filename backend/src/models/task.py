@@ -31,6 +31,22 @@ class TaskPriority(str, Enum):
     HIGH = "high"
 
 
+class RecurrencePattern(str, Enum):
+    """
+    Recurrence pattern enumeration.
+
+    Values:
+        NONE: No recurrence (one-time task)
+        DAILY: Repeats every N days
+        WEEKLY: Repeats every N weeks
+        MONTHLY: Repeats every N months
+    """
+    NONE = "none"
+    DAILY = "daily"
+    WEEKLY = "weekly"
+    MONTHLY = "monthly"
+
+
 class Task(SQLModel, table=True):
     """
     Task entity representing a user's task item.
@@ -45,7 +61,11 @@ class Task(SQLModel, table=True):
         priority: Task priority enum (low/medium/high, default: medium)
         due_date: Optional due date for the task
         remind_at: Optional reminder datetime (when to send notification)
+        recurrence_pattern: Recurrence pattern (none/daily/weekly/monthly, default: none)
+        recurrence_interval: Interval for recurrence (e.g., every 2 weeks), default 1
+        next_occurrence: Calculated next occurrence date for recurring tasks
         completed_at: Optional timestamp when task was marked complete
+        deleted_at: Optional timestamp for soft delete
         created_at: Creation timestamp (UTC)
         updated_at: Last update timestamp (UTC)
     """
@@ -60,6 +80,10 @@ class Task(SQLModel, table=True):
     priority: TaskPriority = Field(default=TaskPriority.MEDIUM, sa_column_kwargs={"nullable": False})
     due_date: Optional[date] = Field(default=None, index=True)
     remind_at: Optional[datetime] = Field(default=None, index=True)
+    recurrence_pattern: RecurrencePattern = Field(default=RecurrencePattern.NONE, sa_column_kwargs={"nullable": False})
+    recurrence_interval: Optional[int] = Field(default=1)
+    next_occurrence: Optional[date] = Field(default=None)
     completed_at: Optional[datetime] = Field(default=None)
+    deleted_at: Optional[datetime] = Field(default=None, index=True)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)

@@ -11,6 +11,7 @@ export type {
 export type {
   Task,
   TaskPriority,
+  RecurrencePattern,
   TagSummary,
   CreateTaskRequest,
   UpdateTaskRequest,
@@ -26,3 +27,9 @@ export type {
   UpdateTagRequest,
   TagListResponse
 } from './tag'
+
+// Audit types
+export type {
+  AuditLogEntry,
+  AuditLogListResponse
+} from './audit'

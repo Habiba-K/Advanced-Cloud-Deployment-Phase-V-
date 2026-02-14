@@ -1,17 +1,51 @@
 from typing import List, Optional
 from uuid import UUID
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
+from dateutil.relativedelta import relativedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete, or_, and_, func
 from sqlalchemy.orm import selectinload
-from src.models.task import Task, TaskPriority, TaskStatus
+from src.models.task import Task, TaskPriority, TaskStatus, RecurrencePattern
 from src.models.tag import Tag
 from src.models.todo_tag import TodoTag
 from src.schemas.task import TaskCreate, TaskUpdate, TaskResponse, TagSummary, TaskListParams
-from src.services.event_publisher import publish_reminder_event
+from src.services.event_publisher import publish_reminder_event, publish_task_event, publish_task_update_event
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+def _build_task_response(task: Task, tags: List[TagSummary]) -> TaskResponse:
+    """Build a TaskResponse from a Task model and tags list."""
+    return TaskResponse(
+        id=task.id,
+        user_id=task.user_id,
+        title=task.title,
+        description=task.description,
+        completed=task.completed,
+        status=task.status.value,
+        priority=task.priority.value,
+        tags=tags,
+        due_date=task.due_date,
+        remind_at=task.remind_at,
+        recurrence_pattern=task.recurrence_pattern.value if task.recurrence_pattern else "none",
+        recurrence_interval=task.recurrence_interval or 1,
+        next_occurrence=task.next_occurrence,
+        completed_at=task.completed_at,
+        created_at=task.created_at,
+        updated_at=task.updated_at
+    )
+
+
+def _calculate_next_occurrence(base_date: date, pattern: RecurrencePattern, interval: int) -> date:
+    """Calculate the next occurrence date based on recurrence pattern and interval."""
+    if pattern == RecurrencePattern.DAILY:
+        return base_date + timedelta(days=interval)
+    elif pattern == RecurrencePattern.WEEKLY:
+        return base_date + timedelta(weeks=interval)
+    elif pattern == RecurrencePattern.MONTHLY:
+        return base_date + relativedelta(months=interval)
+    return base_date
 
 
 async def get_user_tasks(db: AsyncSession, user_id: str) -> List[TaskResponse]:
@@ -26,30 +60,14 @@ async def get_user_tasks(db: AsyncSession, user_id: str) -> List[TaskResponse]:
         List of TaskResponse objects with tags populated
     """
     result = await db.execute(
-        select(Task).where(Task.user_id == user_id)
+        select(Task).where(Task.user_id == user_id, Task.deleted_at.is_(None))
     )
     tasks = result.scalars().all()
 
-    # Load tags for each task
     task_responses = []
     for task in tasks:
         tags = await get_task_tags(db, task.id)
-        task_response = TaskResponse(
-            id=task.id,
-            user_id=task.user_id,
-            title=task.title,
-            description=task.description,
-            completed=task.completed,
-            status=task.status.value,
-            priority=task.priority.value,
-            tags=tags,
-            due_date=task.due_date,
-            remind_at=task.remind_at,
-            completed_at=task.completed_at,
-            created_at=task.created_at,
-            updated_at=task.updated_at
-        )
-        task_responses.append(task_response)
+        task_responses.append(_build_task_response(task, tags))
 
     return task_responses
 
@@ -70,8 +88,8 @@ async def list_tasks(
     Returns:
         List of TaskResponse objects matching the criteria
     """
-    # Start with base query
-    query = select(Task).where(Task.user_id == user_id)
+    # Start with base query (exclude soft-deleted)
+    query = select(Task).where(Task.user_id == user_id, Task.deleted_at.is_(None))
 
     # Apply search filter (case-insensitive across title and description)
     if params.search:
@@ -153,26 +171,10 @@ async def list_tasks(
     result = await db.execute(query)
     tasks = result.scalars().all()
 
-    # Load tags for each task
     task_responses = []
     for task in tasks:
         tags = await get_task_tags(db, task.id)
-        task_response = TaskResponse(
-            id=task.id,
-            user_id=task.user_id,
-            title=task.title,
-            description=task.description,
-            completed=task.completed,
-            status=task.status.value,
-            priority=task.priority.value,
-            tags=tags,
-            due_date=task.due_date,
-            remind_at=task.remind_at,
-            completed_at=task.completed_at,
-            created_at=task.created_at,
-            updated_at=task.updated_at
-        )
-        task_responses.append(task_response)
+        task_responses.append(_build_task_response(task, tags))
 
     return task_responses
 
@@ -229,7 +231,10 @@ async def create_task(db: AsyncSession, user_id: str, task_data: TaskCreate) -> 
         except ValueError:
             logger.warning(f"Invalid remind_at format: {task_data.remind_at}")
 
-    # Create task
+    # Create task with recurrence fields
+    recurrence_pattern = RecurrencePattern(task_data.recurrence_pattern) if task_data.recurrence_pattern else RecurrencePattern.NONE
+    recurrence_interval = task_data.recurrence_interval if task_data.recurrence_interval else 1
+
     task = Task(
         user_id=user_id,
         title=task_data.title,
@@ -238,7 +243,9 @@ async def create_task(db: AsyncSession, user_id: str, task_data: TaskCreate) -> 
         status=TaskStatus.PENDING,
         priority=TaskPriority(task_data.priority),
         due_date=due_date_obj,
-        remind_at=remind_at_obj
+        remind_at=remind_at_obj,
+        recurrence_pattern=recurrence_pattern,
+        recurrence_interval=recurrence_interval,
     )
     db.add(task)
     await db.commit()
@@ -267,23 +274,15 @@ async def create_task(db: AsyncSession, user_id: str, task_data: TaskCreate) -> 
             logger.error(f"Failed to publish reminder event for task {task.id}: {str(e)}")
             # Don't fail task creation if event publishing fails
 
-    # Load tags and return TaskResponse
+    # Publish task event and task update event
+    try:
+        await publish_task_event("created", task, user_id)
+        await publish_task_update_event("created", task, user_id)
+    except Exception as e:
+        logger.error(f"Failed to publish events for new task {task.id}: {str(e)}")
+
     tags = await get_task_tags(db, task.id)
-    return TaskResponse(
-        id=task.id,
-        user_id=task.user_id,
-        title=task.title,
-        description=task.description,
-        completed=task.completed,
-        status=task.status.value,
-        priority=task.priority.value,
-        tags=tags,
-        due_date=task.due_date,
-        remind_at=task.remind_at,
-        completed_at=task.completed_at,
-        created_at=task.created_at,
-        updated_at=task.updated_at
-    )
+    return _build_task_response(task, tags)
 
 
 async def get_task_by_id(db: AsyncSession, user_id: str, task_id: UUID) -> Optional[TaskResponse]:
@@ -299,30 +298,15 @@ async def get_task_by_id(db: AsyncSession, user_id: str, task_id: UUID) -> Optio
         TaskResponse object if found and belongs to user, None otherwise
     """
     result = await db.execute(
-        select(Task).where(Task.id == task_id, Task.user_id == user_id)
+        select(Task).where(Task.id == task_id, Task.user_id == user_id, Task.deleted_at.is_(None))
     )
     task = result.scalar_one_or_none()
 
     if not task:
         return None
 
-    # Load tags
     tags = await get_task_tags(db, task.id)
-    return TaskResponse(
-        id=task.id,
-        user_id=task.user_id,
-        title=task.title,
-        description=task.description,
-        completed=task.completed,
-        status=task.status.value,
-        priority=task.priority.value,
-        tags=tags,
-        due_date=task.due_date,
-        remind_at=task.remind_at,
-        completed_at=task.completed_at,
-        created_at=task.created_at,
-        updated_at=task.updated_at
-    )
+    return _build_task_response(task, tags)
 
 
 async def update_task(db: AsyncSession, user_id: str, task_id: UUID, task_data: TaskUpdate) -> Optional[TaskResponse]:
@@ -338,45 +322,25 @@ async def update_task(db: AsyncSession, user_id: str, task_id: UUID, task_data: 
     Returns:
         Updated TaskResponse object if found and belongs to user, None otherwise
     """
-    # Get the raw task object for updates
     result = await db.execute(
-        select(Task).where(Task.id == task_id, Task.user_id == user_id)
+        select(Task).where(Task.id == task_id, Task.user_id == user_id, Task.deleted_at.is_(None))
     )
     task = result.scalar_one_or_none()
 
     if not task:
         return None
 
-    # Track if due_date or remind_at changed
     due_date_changed = False
     remind_at_changed = False
+    fields_set = getattr(task_data, '__pydantic_fields_set__', set())
 
-    # Debug logging
-    logger.info(f"\n=== UPDATE TASK SERVICE ===")
-    logger.info(f"Task ID: {task_id}")
-    logger.info(f"Current task.due_date: {task.due_date}")
-    logger.info(f"Current task.remind_at: {task.remind_at}")
-    logger.info(f"Incoming task_data.due_date: {task_data.due_date}")
-    logger.info(f"Incoming task_data.remind_at: {task_data.remind_at}")
-    logger.info(f"Has __pydantic_fields_set__: {hasattr(task_data, '__pydantic_fields_set__')}")
-    if hasattr(task_data, '__pydantic_fields_set__'):
-        logger.info(f"Fields set: {task_data.__pydantic_fields_set__}")
-        logger.info(f"'due_date' in fields_set: {'due_date' in task_data.__pydantic_fields_set__}")
-        logger.info(f"'remind_at' in fields_set: {'remind_at' in task_data.__pydantic_fields_set__}")
-
-    # Get all fields including those set to None
-    update_data = task_data.model_dump(exclude_unset=False)
-
-    # Update only provided fields
     if task_data.title is not None:
         task.title = task_data.title
     if task_data.description is not None:
         task.description = task_data.description
     if task_data.completed is not None:
         task.completed = task_data.completed
-        # Sync status field with completed field
         task.status = TaskStatus.COMPLETED if task_data.completed else TaskStatus.PENDING
-        # Set completed_at timestamp when marking as complete
         if task_data.completed and not task.completed_at:
             task.completed_at = datetime.utcnow()
         elif not task_data.completed:
@@ -384,111 +348,80 @@ async def update_task(db: AsyncSession, user_id: str, task_id: UUID, task_data: 
     if task_data.priority is not None:
         task.priority = TaskPriority(task_data.priority)
 
-    # Handle due_date - check if field was explicitly provided
-    # In Pydantic v2, we need to check if the field was set, even if it's None
-    if hasattr(task_data, '__pydantic_fields_set__') and 'due_date' in task_data.__pydantic_fields_set__:
-        logger.info(f"Processing due_date field...")
+    # Handle due_date
+    if 'due_date' in fields_set:
         if task_data.due_date is None:
-            # Clear the due_date
-            logger.info(f"due_date is None, clearing field. Current value: {task.due_date}")
             if task.due_date is not None:
                 task.due_date = None
                 due_date_changed = True
-                logger.info(f"due_date cleared! Changed flag: {due_date_changed}")
-            else:
-                logger.info(f"due_date was already None, no change needed")
         else:
             try:
                 new_due_date = date.fromisoformat(task_data.due_date)
                 if task.due_date != new_due_date:
                     task.due_date = new_due_date
                     due_date_changed = True
-                    logger.info(f"due_date updated to: {new_due_date}")
             except ValueError:
                 logger.warning(f"Invalid due_date format: {task_data.due_date}")
-    else:
-        logger.info(f"due_date field NOT in __pydantic_fields_set__, skipping")
 
-    # Handle remind_at - check if field was explicitly provided
-    if hasattr(task_data, '__pydantic_fields_set__') and 'remind_at' in task_data.__pydantic_fields_set__:
-        logger.info(f"Processing remind_at field...")
+    # Handle remind_at
+    if 'remind_at' in fields_set:
         if task_data.remind_at is None:
-            # Clear the remind_at
-            logger.info(f"remind_at is None, clearing field. Current value: {task.remind_at}")
             if task.remind_at is not None:
                 task.remind_at = None
                 remind_at_changed = True
-                logger.info(f"remind_at cleared! Changed flag: {remind_at_changed}")
-            else:
-                logger.info(f"remind_at was already None, no change needed")
         else:
             try:
                 new_remind_at = datetime.fromisoformat(task_data.remind_at)
                 if task.remind_at != new_remind_at:
                     task.remind_at = new_remind_at
                     remind_at_changed = True
-                    logger.info(f"remind_at updated to: {new_remind_at}")
             except ValueError:
                 logger.warning(f"Invalid remind_at format: {task_data.remind_at}")
-    else:
-        logger.info(f"remind_at field NOT in __pydantic_fields_set__, skipping")
+
+    # Handle recurrence fields
+    if task_data.recurrence_pattern is not None:
+        task.recurrence_pattern = RecurrencePattern(task_data.recurrence_pattern)
+    if task_data.recurrence_interval is not None:
+        task.recurrence_interval = task_data.recurrence_interval
 
     task.updated_at = datetime.utcnow()
     await db.commit()
 
     # Update tag associations if provided
     if task_data.tag_ids is not None:
-        # Delete existing associations
-        await db.execute(
-            delete(TodoTag).where(TodoTag.todo_id == task_id)
-        )
-
-        # Create new associations
+        await db.execute(delete(TodoTag).where(TodoTag.todo_id == task_id))
         for tag_id in task_data.tag_ids:
-            # Verify tag belongs to user
             tag_result = await db.execute(
                 select(Tag).where(Tag.id == tag_id, Tag.user_id == user_id)
             )
             tag = tag_result.scalar_one_or_none()
             if tag:
-                todo_tag = TodoTag(todo_id=task_id, tag_id=tag_id)
-                db.add(todo_tag)
-
+                db.add(TodoTag(todo_id=task_id, tag_id=tag_id))
         await db.commit()
 
     # Publish reminder event if due_date or remind_at changed and both are set
     if (due_date_changed or remind_at_changed) and task.due_date and task.remind_at:
         try:
             await publish_reminder_event(task, user_id)
-            logger.info(f"Published updated reminder event for task {task.id}")
         except Exception as e:
             logger.error(f"Failed to publish reminder event for task {task.id}: {str(e)}")
-            # Don't fail task update if event publishing fails
 
     await db.refresh(task)
 
-    # Load tags and return TaskResponse
+    # Publish update events
+    try:
+        await publish_task_event("updated", task, user_id)
+        await publish_task_update_event("updated", task, user_id)
+    except Exception as e:
+        logger.error(f"Failed to publish update events for task {task.id}: {str(e)}")
+
     tags = await get_task_tags(db, task.id)
-    return TaskResponse(
-        id=task.id,
-        user_id=task.user_id,
-        title=task.title,
-        description=task.description,
-        completed=task.completed,
-        status=task.status.value,
-        priority=task.priority.value,
-        tags=tags,
-        due_date=task.due_date,
-        remind_at=task.remind_at,
-        completed_at=task.completed_at,
-        created_at=task.created_at,
-        updated_at=task.updated_at
-    )
+    return _build_task_response(task, tags)
 
 
 async def delete_task(db: AsyncSession, user_id: str, task_id: UUID) -> bool:
     """
-    Delete a task for a specific user.
+    Soft-delete a task for a specific user by setting deleted_at.
 
     Args:
         db: Database session
@@ -498,46 +431,41 @@ async def delete_task(db: AsyncSession, user_id: str, task_id: UUID) -> bool:
     Returns:
         True if task was deleted, False if not found or doesn't belong to user
     """
-    # Get the raw Task object (not TaskResponse) for deletion
     result = await db.execute(
-        select(Task).where(Task.id == task_id, Task.user_id == user_id)
+        select(Task).where(Task.id == task_id, Task.user_id == user_id, Task.deleted_at.is_(None))
     )
     task = result.scalar_one_or_none()
 
     if not task:
         return False
 
-    await db.delete(task)
+    task.deleted_at = datetime.utcnow()
+    task.updated_at = datetime.utcnow()
     await db.commit()
+
+    # Publish delete events
+    try:
+        await publish_task_event("deleted", task, user_id)
+        await publish_task_update_event("deleted", task, user_id)
+    except Exception as e:
+        logger.error(f"Failed to publish delete events for task {task.id}: {str(e)}")
+
     return True
 
 
 async def toggle_task_completion(db: AsyncSession, user_id: str, task_id: UUID) -> Optional[TaskResponse]:
-    """
-    Toggle the completion status of a task.
-
-    Args:
-        db: Database session
-        user_id: User identifier to enforce ownership
-        task_id: Task unique identifier
-
-    Returns:
-        Updated TaskResponse object if found and belongs to user, None otherwise
-    """
-    # Get the raw task object for updates
+    """Toggle the completion status of a task."""
     result = await db.execute(
-        select(Task).where(Task.id == task_id, Task.user_id == user_id)
+        select(Task).where(Task.id == task_id, Task.user_id == user_id, Task.deleted_at.is_(None))
     )
     task = result.scalar_one_or_none()
 
     if not task:
         return None
 
-    # Toggle both completed and status fields in sync
     task.completed = not task.completed
     task.status = TaskStatus.COMPLETED if task.completed else TaskStatus.PENDING
 
-    # Set or clear completed_at timestamp
     if task.completed and not task.completed_at:
         task.completed_at = datetime.utcnow()
     elif not task.completed:
@@ -547,21 +475,80 @@ async def toggle_task_completion(db: AsyncSession, user_id: str, task_id: UUID) 
     await db.commit()
     await db.refresh(task)
 
-    # Load tags and return TaskResponse
+    event_type = "completed" if task.completed else "updated"
+    try:
+        await publish_task_event(event_type, task, user_id)
+        await publish_task_update_event(event_type, task, user_id)
+    except Exception as e:
+        logger.error(f"Failed to publish completion events for task {task.id}: {str(e)}")
+
     tags = await get_task_tags(db, task.id)
-    return TaskResponse(
-        id=task.id,
-        user_id=task.user_id,
-        title=task.title,
-        description=task.description,
-        completed=task.completed,
-        status=task.status.value,
-        priority=task.priority.value,
-        tags=tags,
-        due_date=task.due_date,
-        remind_at=task.remind_at,
-        completed_at=task.completed_at,
-        created_at=task.created_at,
-        updated_at=task.updated_at
+    return _build_task_response(task, tags)
+
+
+async def complete_task(db: AsyncSession, user_id: str, task_id: UUID) -> Optional[TaskResponse]:
+    """
+    Mark a task as complete. Publishes a 'completed' TaskEvent which triggers
+    the Recurring Task Service to create the next occurrence if applicable.
+    """
+    result = await db.execute(
+        select(Task).where(Task.id == task_id, Task.user_id == user_id, Task.deleted_at.is_(None))
     )
+    task = result.scalar_one_or_none()
+
+    if not task:
+        return None
+
+    task.completed = True
+    task.status = TaskStatus.COMPLETED
+    task.completed_at = datetime.utcnow()
+
+    # Calculate next_occurrence for recurring tasks
+    if task.recurrence_pattern != RecurrencePattern.NONE:
+        base = task.due_date or date.today()
+        task.next_occurrence = _calculate_next_occurrence(
+            base, task.recurrence_pattern, task.recurrence_interval or 1
+        )
+
+    task.updated_at = datetime.utcnow()
+    await db.commit()
+    await db.refresh(task)
+
+    # Publish completed event (consumed by Recurring Task Service and Audit Service)
+    try:
+        await publish_task_event("completed", task, user_id)
+        await publish_task_update_event("completed", task, user_id)
+    except Exception as e:
+        logger.error(f"Failed to publish completed events for task {task.id}: {str(e)}")
+
+    tags = await get_task_tags(db, task.id)
+    return _build_task_response(task, tags)
+
+
+async def incomplete_task(db: AsyncSession, user_id: str, task_id: UUID) -> Optional[TaskResponse]:
+    """Mark a task as incomplete (revert completion)."""
+    result = await db.execute(
+        select(Task).where(Task.id == task_id, Task.user_id == user_id, Task.deleted_at.is_(None))
+    )
+    task = result.scalar_one_or_none()
+
+    if not task:
+        return None
+
+    task.completed = False
+    task.status = TaskStatus.PENDING
+    task.completed_at = None
+    task.next_occurrence = None
+    task.updated_at = datetime.utcnow()
+    await db.commit()
+    await db.refresh(task)
+
+    try:
+        await publish_task_event("updated", task, user_id)
+        await publish_task_update_event("updated", task, user_id)
+    except Exception as e:
+        logger.error(f"Failed to publish incomplete events for task {task.id}: {str(e)}")
+
+    tags = await get_task_tags(db, task.id)
+    return _build_task_response(task, tags)
 

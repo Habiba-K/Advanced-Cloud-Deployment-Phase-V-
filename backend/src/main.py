@@ -10,6 +10,7 @@ import logging
 # Import models to ensure SQLModel creates tables
 from src.models.conversation import Conversation
 from src.models.message import Message
+from src.models.audit_log import AuditLog
 
 # Import MCP server
 from src.mcp import mcp_server
@@ -111,10 +112,11 @@ async def root():
 
 
 # Include routers
-from src.routers import auth, tags, dapr
+from src.routers import auth, tags, dapr, audit
 app.include_router(auth.router, prefix="/api")
 app.include_router(tasks.router, prefix="/api", tags=["tasks"])
 app.include_router(tags.router, prefix="/api", tags=["tags"])
+app.include_router(audit.router, prefix="/api", tags=["audit"])
 app.include_router(dapr.router, tags=["dapr"])
 
 from src.routers import chat

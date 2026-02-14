@@ -32,6 +32,8 @@ class TaskCreate(BaseModel):
         tag_ids: List of tag IDs to associate with the task
         due_date: Optional due date for the task (ISO date string)
         remind_at: Optional reminder datetime (ISO datetime string)
+        recurrence_pattern: Recurrence pattern (none, daily, weekly, monthly)
+        recurrence_interval: Interval for recurrence (default: 1)
     """
     title: str = Field(..., min_length=1, max_length=500)
     description: Optional[str] = Field(None, max_length=5000)
@@ -39,6 +41,8 @@ class TaskCreate(BaseModel):
     tag_ids: List[UUID] = Field(default_factory=list)
     due_date: Optional[str] = Field(None, description="Due date in ISO format (YYYY-MM-DD)")
     remind_at: Optional[str] = Field(None, description="Reminder datetime in ISO format")
+    recurrence_pattern: str = Field(default="none", pattern="^(none|daily|weekly|monthly)$")
+    recurrence_interval: int = Field(default=1, ge=1)
 
     @validator('title')
     def title_not_empty(cls, v):
@@ -70,6 +74,12 @@ class TaskCreate(BaseModel):
                 raise ValueError('remind_at must be in ISO datetime format')
         return v
 
+    @validator('recurrence_pattern')
+    def validate_recurrence_pattern(cls, v):
+        if v not in ['none', 'daily', 'weekly', 'monthly']:
+            raise ValueError('recurrence_pattern must be one of: none, daily, weekly, monthly')
+        return v
+
     @model_validator(mode='after')
     def validate_reminder_before_due(self):
         if self.due_date and self.remind_at:
@@ -85,6 +95,9 @@ class TaskCreate(BaseModel):
             except ValueError as e:
                 if 'remind_at must be before due_date' in str(e):
                     raise
+
+        if self.recurrence_pattern != 'none' and self.recurrence_interval < 1:
+            raise ValueError('recurrence_interval must be >= 1 when recurrence is set')
 
         return self
 
@@ -102,6 +115,8 @@ class TaskUpdate(BaseModel):
         tag_ids: Updated list of tag IDs
         due_date: Updated due date (ISO date string)
         remind_at: Updated reminder datetime (ISO datetime string)
+        recurrence_pattern: Updated recurrence pattern
+        recurrence_interval: Updated recurrence interval
     """
     title: Optional[str] = Field(None, min_length=1, max_length=500)
     description: Optional[str] = Field(None, max_length=5000)
@@ -110,6 +125,8 @@ class TaskUpdate(BaseModel):
     tag_ids: Optional[List[UUID]] = None
     due_date: Optional[str] = Field(None, description="Due date in ISO format (YYYY-MM-DD)")
     remind_at: Optional[str] = Field(None, description="Reminder datetime in ISO format")
+    recurrence_pattern: Optional[str] = Field(None, pattern="^(none|daily|weekly|monthly)$")
+    recurrence_interval: Optional[int] = Field(None, ge=1)
 
     @validator('title')
     def title_not_empty(cls, v):
@@ -176,6 +193,9 @@ class TaskResponse(BaseModel):
         tags: List of associated tags
         due_date: Optional due date
         remind_at: Optional reminder datetime
+        recurrence_pattern: Recurrence pattern (none, daily, weekly, monthly)
+        recurrence_interval: Recurrence interval
+        next_occurrence: Next occurrence date for recurring tasks
         completed_at: Optional completion timestamp
         created_at: Creation timestamp
         updated_at: Last update timestamp
@@ -190,6 +210,9 @@ class TaskResponse(BaseModel):
     tags: List[TagSummary] = Field(default_factory=list)
     due_date: Optional[date] = None
     remind_at: Optional[datetime] = None
+    recurrence_pattern: str = "none"
+    recurrence_interval: int = 1
+    next_occurrence: Optional[date] = None
     completed_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime

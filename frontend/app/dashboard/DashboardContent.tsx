@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Task, CreateTaskRequest, UpdateTaskRequest } from '@/types'
 import { TaskList } from '@/components/tasks/TaskList'
@@ -15,6 +15,8 @@ import { Modal } from '@/components/ui/Modal'
 import { api } from '@/lib/api-client'
 import { getSession, signOut } from '@/lib/auth'
 import ChatContainer from '@/components/chat/ChatContainer'
+import { useWebSocket } from '@/lib/useWebSocket'
+import type { TaskWebSocketMessage } from '@/lib/websocket'
 
 export function DashboardContent() {
   const router = useRouter()
@@ -35,6 +37,16 @@ export function DashboardContent() {
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false)
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [isChatModalOpen, setIsChatModalOpen] = useState(false)
+
+  // WebSocket for real-time task updates
+  const wsMessageHandler = useCallback((msg: TaskWebSocketMessage) => {
+    if (['created', 'updated', 'completed', 'deleted'].includes(msg.type)) {
+      // Trigger a lightweight refetch by toggling a counter
+      setWsRefreshTrigger(prev => prev + 1)
+    }
+  }, [])
+  const [wsRefreshTrigger, setWsRefreshTrigger] = useState(0)
+  const { isConnected: wsConnected } = useWebSocket(userId, wsMessageHandler)
 
   // Task stats for cards
   const totalTasks = tasks.length
@@ -124,12 +136,12 @@ export function DashboardContent() {
     }
   }
 
-  // Fetch tasks when filters change
+  // Fetch tasks when filters change or WebSocket triggers refresh
   useEffect(() => {
     if (userId) {
       fetchTasks()
     }
-  }, [userId, search, status, priority, tagIds, dueDateFrom, dueDateTo, sortBy, sortOrder])
+  }, [userId, search, status, priority, tagIds, dueDateFrom, dueDateTo, sortBy, sortOrder, wsRefreshTrigger])
 
   // Initial fetch
   useEffect(() => {
@@ -325,6 +337,16 @@ export function DashboardContent() {
                 </svg>
                 <span>Manage Tags</span>
               </a>
+              <a
+                href="/audit"
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="flex items-center gap-3 px-4 py-3 text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors font-medium"
+              >
+                <svg className="w-5 h-5 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <span>Activity Log</span>
+              </a>
             </nav>
           </div>
         </div>
@@ -361,8 +383,9 @@ export function DashboardContent() {
                   <h1 className="text-lg font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
                     TaskFlow
                   </h1>
-                  <p className="hidden sm:block text-xs text-gray-500 dark:text-gray-400">
+                  <p className="hidden sm:block text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1.5">
                     Manage your tasks efficiently
+                    <span className={`inline-block w-1.5 h-1.5 rounded-full ${wsConnected ? 'bg-green-500' : 'bg-gray-400'}`} title={wsConnected ? 'Real-time connected' : 'Real-time disconnected'} />
                   </p>
                 </div>
               </div>
@@ -403,6 +426,15 @@ export function DashboardContent() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
                   </svg>
                   <span>Manage Tags</span>
+                </a>
+                <a
+                  href="/audit"
+                  className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-white dark:hover:bg-gray-700 rounded-lg transition-all"
+                >
+                  <svg className="w-4 h-4 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  <span>Activity Log</span>
                 </a>
               </div>
 
