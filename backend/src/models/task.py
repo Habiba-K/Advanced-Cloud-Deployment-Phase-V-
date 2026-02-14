@@ -76,8 +76,8 @@ class Task(SQLModel, table=True):
     title: str = Field(max_length=500)
     description: Optional[str] = Field(default=None)
     completed: bool = Field(default=False)  # DEPRECATED: kept for backward compatibility
-    status: TaskStatus = Field(default=TaskStatus.PENDING, sa_column_kwargs={"nullable": False})
-    priority: TaskPriority = Field(default=TaskPriority.MEDIUM, sa_column_kwargs={"nullable": False})
+    status: TaskStatus = Field(default=TaskStatus.PENDING, sa_column_kwargs={"nullable": False}, index=True)
+    priority: TaskPriority = Field(default=TaskPriority.MEDIUM, sa_column_kwargs={"nullable": False}, index=True)
     due_date: Optional[date] = Field(default=None, index=True)
     remind_at: Optional[datetime] = Field(default=None, index=True)
     recurrence_pattern: RecurrencePattern = Field(default=RecurrencePattern.NONE, sa_column_kwargs={"nullable": False})

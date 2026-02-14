@@ -1,11 +1,15 @@
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from src.database import init_db
+from src.database import init_db, get_session
 from src.routers import tasks
 import os
 from dotenv import load_dotenv
 import logging
+import uuid
+import time
+from datetime import datetime
+from sqlmodel import select
 
 # Import models to ensure SQLModel creates tables
 from src.models.conversation import Conversation
@@ -17,8 +21,12 @@ from src.mcp import mcp_server
 
 load_dotenv()
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+# Configure structured logging with JSON format
+logging.basicConfig(
+    level=logging.INFO,
+    format='{"timestamp": "%(asctime)s", "level": "%(levelname)s", "name": "%(name)s", "message": "%(message)s", "correlation_id": "%(correlation_id)s"}',
+    datefmt='%Y-%m-%dT%H:%M:%S'
+)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(
@@ -37,6 +45,53 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# Correlation ID Middleware
+@app.middleware("http")
+async def add_correlation_id(request: Request, call_next):
+    """Add correlation ID to each request for distributed tracing."""
+    correlation_id = request.headers.get("X-Correlation-ID", str(uuid.uuid4()))
+
+    # Store correlation ID in request state
+    request.state.correlation_id = correlation_id
+
+    # Add to logging context
+    old_factory = logging.getLogRecordFactory()
+
+    def record_factory(*args, **kwargs):
+        record = old_factory(*args, **kwargs)
+        record.correlation_id = correlation_id
+        return record
+
+    logging.setLogRecordFactory(record_factory)
+
+    # Track request timing
+    start_time = time.time()
+
+    try:
+        response = await call_next(request)
+
+        # Add correlation ID to response headers
+        response.headers["X-Correlation-ID"] = correlation_id
+
+        # Log request completion
+        duration = time.time() - start_time
+        logger.info(
+            f"Request completed: {request.method} {request.url.path} - Status: {response.status_code} - Duration: {duration:.3f}s",
+            extra={"correlation_id": correlation_id}
+        )
+
+        return response
+    except Exception as e:
+        duration = time.time() - start_time
+        logger.error(
+            f"Request failed: {request.method} {request.url.path} - Error: {str(e)} - Duration: {duration:.3f}s",
+            extra={"correlation_id": correlation_id}
+        )
+        raise
+    finally:
+        logging.setLogRecordFactory(old_factory)
 
 
 # Custom Exception Handlers
@@ -108,6 +163,80 @@ async def root():
         "version": "1.0.0",
         "docs": "/docs",
         "redoc": "/redoc"
+    }
+
+
+@app.get("/health")
+async def health_check():
+    """
+    Basic health check endpoint for load balancers and orchestrators.
+    Returns 200 if the service is running.
+    """
+    return {
+        "status": "healthy",
+        "timestamp": datetime.utcnow().isoformat(),
+        "service": "task-api"
+    }
+
+
+@app.get("/health/ready")
+async def readiness_check():
+    """
+    Readiness check - verifies all dependencies are available.
+    Used by Kubernetes to determine if the pod can receive traffic.
+    """
+    checks = {
+        "database": "unknown",
+        "mcp_server": "unknown"
+    }
+
+    overall_status = "ready"
+
+    # Check database connectivity
+    try:
+        async with get_session() as session:
+            # Simple query to verify database connection
+            result = await session.execute(select(1))
+            result.scalar()
+            checks["database"] = "healthy"
+    except Exception as e:
+        checks["database"] = f"unhealthy: {str(e)}"
+        overall_status = "not_ready"
+        logger.error(f"Database health check failed: {str(e)}", extra={"correlation_id": "health-check"})
+
+    # Check MCP server status
+    try:
+        if mcp_server and len(mcp_server.tools) > 0:
+            checks["mcp_server"] = "healthy"
+        else:
+            checks["mcp_server"] = "unhealthy: no tools loaded"
+            overall_status = "not_ready"
+    except Exception as e:
+        checks["mcp_server"] = f"unhealthy: {str(e)}"
+        overall_status = "not_ready"
+        logger.error(f"MCP server health check failed: {str(e)}", extra={"correlation_id": "health-check"})
+
+    status_code = 200 if overall_status == "ready" else 503
+
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "status": overall_status,
+            "timestamp": datetime.utcnow().isoformat(),
+            "checks": checks
+        }
+    )
+
+
+@app.get("/health/live")
+async def liveness_check():
+    """
+    Liveness check - verifies the service is alive and not deadlocked.
+    Used by Kubernetes to determine if the pod should be restarted.
+    """
+    return {
+        "status": "alive",
+        "timestamp": datetime.utcnow().isoformat()
     }
 
 

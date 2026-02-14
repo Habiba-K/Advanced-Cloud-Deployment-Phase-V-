@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { sanitizeSearchQuery } from '@/lib/security'
 
 interface SearchBarProps {
   value: string
@@ -24,11 +25,13 @@ export default function SearchBar({
     setLocalValue(value)
   }, [value])
 
-  // Debounced onChange
+  // Debounced onChange with sanitization
   useEffect(() => {
     const timer = setTimeout(() => {
       if (localValue !== value) {
-        onChange(localValue)
+        // Sanitize search query before passing to parent
+        const sanitized = sanitizeSearchQuery(localValue)
+        onChange(sanitized)
       }
     }, debounceMs)
 

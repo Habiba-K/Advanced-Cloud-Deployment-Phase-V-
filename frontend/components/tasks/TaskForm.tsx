@@ -5,6 +5,7 @@ import { useForm } from 'react-hook-form'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { CreateTaskRequest, UpdateTaskRequest, Task, TaskPriority, RecurrencePattern } from '@/types'
+import { sanitizeTaskTitle, sanitizeTaskDescription } from '@/lib/security'
 import TagSelector from './TagSelector'
 import RecurrenceSelector from './RecurrenceSelector'
 
@@ -99,12 +100,16 @@ export function TaskForm({ task, onSubmit, onSuccess, onCancel, loading: externa
     setError(null)
 
     try {
+      // Sanitize user inputs to prevent XSS
+      const sanitizedTitle = sanitizeTaskTitle(data.title)
+      const sanitizedDescription = sanitizeTaskDescription(data.description || '')
+
       // Include priority, tag_ids, due_date, and remind_at in submission
       // For edit mode, explicitly send null for cleared fields
       // For create mode, send undefined for empty fields
       const submitData = {
-        title: data.title,
-        description: data.description || '',
+        title: sanitizedTitle,
+        description: sanitizedDescription,
         priority: selectedPriority,
         tag_ids: selectedTagIds,
         due_date: dueDate ? dueDate : (isEditMode ? null : undefined),

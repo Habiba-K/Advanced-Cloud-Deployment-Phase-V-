@@ -366,17 +366,17 @@ description: "Implementation tasks for Advanced Features & Local Deployment"
 
 **Purpose**: Improvements that affect multiple user stories
 
-- [ ] T113 [P] Add comprehensive error handling and user-friendly error messages across all frontend pages
-- [ ] T114 [P] Add loading states and skeleton screens for async operations in frontend
-- [ ] T115 [P] Implement retry logic with exponential backoff in Dapr client for transient failures
-- [ ] T116 [P] Add structured logging with correlation IDs across all backend services
-- [ ] T117 [P] Optimize database queries with proper indexes (user_id, status, priority, due_date, deleted_at)
-- [ ] T118 [P] Add input sanitization and XSS prevention in frontend forms
-- [ ] T119 [P] Configure CORS properly in backend for frontend origin
-- [ ] T120 [P] Add health check endpoints for all services
-- [ ] T121 [P] Create README.md with setup instructions for Minikube deployment
-- [ ] T122 [P] Document API endpoints in OpenAPI/Swagger format
-- [ ] T123 [P] Add architecture diagrams showing service communication and event flow
+- [x] T113 [P] Add comprehensive error handling and user-friendly error messages across all frontend pages
+- [x] T114 [P] Add loading states and skeleton screens for async operations in frontend
+- [x] T115 [P] Implement retry logic with exponential backoff in Dapr client for transient failures
+- [x] T116 [P] Add structured logging with correlation IDs across all backend services
+- [x] T117 [P] Optimize database queries with proper indexes (user_id, status, priority, due_date, deleted_at)
+- [x] T118 [P] Add input sanitization and XSS prevention in frontend forms
+- [x] T119 [P] Configure CORS properly in backend for frontend origin
+- [x] T120 [P] Add health check endpoints for all services
+- [x] T121 [P] Create README.md with setup instructions for Minikube deployment
+- [x] T122 [P] Document API endpoints in OpenAPI/Swagger format
+- [x] T123 [P] Add architecture diagrams showing service communication and event flow
 
 ---
 
