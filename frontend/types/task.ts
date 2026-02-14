@@ -8,6 +8,9 @@ export interface TagSummary {
 // Task priority type
 export type TaskPriority = 'low' | 'medium' | 'high'
 
+// Recurrence pattern type
+export type RecurrencePattern = 'none' | 'daily' | 'weekly' | 'monthly'
+
 // Task entity type
 export interface Task {
   id: string // UUID
@@ -15,10 +18,14 @@ export interface Task {
   title: string
   description: string | null
   completed: boolean
+  status: string // 'pending' or 'completed'
   priority: TaskPriority
   tags: TagSummary[]
   due_date: string | null // ISO date string (YYYY-MM-DD)
   remind_at: string | null // ISO datetime string
+  recurrence_pattern: RecurrencePattern
+  recurrence_interval: number
+  next_occurrence: string | null // ISO date string
   completed_at: string | null // ISO datetime string
   created_at: string // ISO 8601 datetime
   updated_at: string // ISO 8601 datetime
@@ -32,6 +39,8 @@ export interface CreateTaskRequest {
   tag_ids?: string[] // Array of tag UUIDs
   due_date?: string // ISO date string (YYYY-MM-DD)
   remind_at?: string // ISO datetime string
+  recurrence_pattern?: RecurrencePattern
+  recurrence_interval?: number
 }
 
 export interface UpdateTaskRequest {
@@ -42,6 +51,8 @@ export interface UpdateTaskRequest {
   tag_ids?: string[] // Array of tag UUIDs
   due_date?: string // ISO date string (YYYY-MM-DD)
   remind_at?: string // ISO datetime string
+  recurrence_pattern?: RecurrencePattern
+  recurrence_interval?: number
 }
 
 // Task list response

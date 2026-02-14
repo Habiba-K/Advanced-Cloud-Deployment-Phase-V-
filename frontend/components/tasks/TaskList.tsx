@@ -2,7 +2,7 @@
 
 import { Task } from '@/types'
 import { TaskCard } from './TaskCard'
-import { Loading } from '@/components/ui/Loading'
+import { TaskListSkeleton } from '@/components/ui/Loading'
 import { ErrorMessage } from '@/components/ui/ErrorMessage'
 
 interface TaskListProps {
@@ -24,12 +24,12 @@ export function TaskList({
   onDelete,
   onRetry
 }: TaskListProps) {
-  // Loading state
+  // Loading state with skeleton
   if (loading) {
-    return <Loading message="Loading your tasks..." />
+    return <TaskListSkeleton count={5} />
   }
 
-  // Error state
+  // Error state with retry
   if (error) {
     return <ErrorMessage message={error} onRetry={onRetry} />
   }

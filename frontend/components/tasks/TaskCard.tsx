@@ -105,6 +105,21 @@ export function TaskCard({ task, onToggleComplete, onEdit, onDelete }: TaskCardP
               </span>
             )}
 
+            {task.recurrence_pattern && task.recurrence_pattern !== 'none' && (
+              <span className="flex items-center gap-1 px-1.5 sm:px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-400 font-medium">
+                <svg className="w-3 h-3 sm:w-3.5 sm:h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                <span className="hidden sm:inline">
+                  {task.recurrence_pattern.charAt(0).toUpperCase() + task.recurrence_pattern.slice(1)}
+                  {task.recurrence_interval > 1 ? ` (${task.recurrence_interval}x)` : ''}
+                </span>
+                <span className="sm:hidden">
+                  {task.recurrence_pattern.charAt(0).toUpperCase() + task.recurrence_pattern.slice(1)}
+                </span>
+              </span>
+            )}
+
             {task.remind_at && (
               <span className="flex items-center gap-1 px-1.5 sm:px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-400 font-medium">
                 <svg className="w-3 h-3 sm:w-3.5 sm:h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

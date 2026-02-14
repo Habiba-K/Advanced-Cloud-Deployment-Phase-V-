@@ -210,16 +210,6 @@ async def update_task(
         HTTPException: 401 if not authenticated, 403 if updating other user's task, 404 if task not found, 422 if validation fails
     """
     try:
-        # Debug logging
-        print(f"\n=== UPDATE TASK ROUTER ===")
-        print(f"Task ID: {task_id}")
-        print(f"Task data received: {task_data}")
-        print(f"Task data dict: {task_data.model_dump()}")
-        print(f"Fields set: {task_data.__pydantic_fields_set__ if hasattr(task_data, '__pydantic_fields_set__') else 'N/A'}")
-        print(f"due_date value: {task_data.due_date}")
-        print(f"remind_at value: {task_data.remind_at}")
-        print(f"=========================\n")
-
         task = await task_service.update_task(db, str(authenticated_user_id), task_id, task_data)
         if not task:
             raise HTTPException(
@@ -304,5 +294,36 @@ async def toggle_task_completion(
             status_code=404,
             detail="Task not found"
         )
+    return task
+
+
+@router.patch("/{user_id}/tasks/{task_id}/mark-complete", response_model=TaskResponse)
+async def mark_task_complete(
+    user_id: UUID,
+    task_id: UUID,
+    authenticated_user_id: Annotated[UUID, Depends(verify_ownership)],
+    db: AsyncSession = Depends(get_session)
+):
+    """
+    Mark a task as complete. For recurring tasks, this triggers the Recurring Task
+    Service to auto-create the next occurrence via Kafka event.
+    """
+    task = await task_service.complete_task(db, str(authenticated_user_id), task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return task
+
+
+@router.patch("/{user_id}/tasks/{task_id}/mark-incomplete", response_model=TaskResponse)
+async def mark_task_incomplete(
+    user_id: UUID,
+    task_id: UUID,
+    authenticated_user_id: Annotated[UUID, Depends(verify_ownership)],
+    db: AsyncSession = Depends(get_session)
+):
+    """Mark a task as incomplete (revert completion)."""
+    task = await task_service.incomplete_task(db, str(authenticated_user_id), task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
     return task
 
