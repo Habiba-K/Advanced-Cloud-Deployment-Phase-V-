@@ -22,11 +22,23 @@ from src.mcp import mcp_server
 load_dotenv()
 
 # Configure structured logging with JSON format
+# Use a custom filter to provide default correlation_id
+class CorrelationIdFilter(logging.Filter):
+    def filter(self, record):
+        if not hasattr(record, 'correlation_id'):
+            record.correlation_id = 'N/A'
+        return True
+
 logging.basicConfig(
     level=logging.INFO,
     format='{"timestamp": "%(asctime)s", "level": "%(levelname)s", "name": "%(name)s", "message": "%(message)s", "correlation_id": "%(correlation_id)s"}',
     datefmt='%Y-%m-%dT%H:%M:%S'
 )
+
+# Add filter to root logger
+for handler in logging.root.handlers:
+    handler.addFilter(CorrelationIdFilter())
+
 logger = logging.getLogger(__name__)
 
 app = FastAPI(
